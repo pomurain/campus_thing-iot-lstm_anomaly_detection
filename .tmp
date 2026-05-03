@@ -1,0 +1,119 @@
+[CHANGE LOG]
+timestamp: 2026-05-01T11:00:00Z
+change_type: architecture
+scope: project setup
+description: Decided to use FastAPI for the backend with SQLite database, and Vanilla HTML/CSS/JS for the frontend.
+reason: The goal is to build a lightweight, responsive edge server on a Raspberry Pi. FastAPI provides a fast API layer and WebSocket support for realtime updates. Vanilla frontend meets the 'no framework' requirement.
+impact: Determines the file structure and dependencies.
+
+[CONTEXT LOG]
+timestamp: 2026-05-01T11:00:00Z
+current_task: Setting up IoT server files based on PROMPT.md
+summary: Evaluated requirements and decided on technology stack (FastAPI, SQLite, Vanilla HTML/CSS/JS). Started creating architecture.
+active_goals: Create main.py, requirements.txt, run.sh, README.md, and frontend files.
+recent_changes: Initialized thought process for project setup.
+decisions: FastAPI over Flask for better WebSocket support for realtime data. Premium glassmorphism design for the UI.
+assumptions: Python 3 is available on the Raspberry Pi. The .pkg model is either pickable or we can mock it until the user provides the real loading code.
+constraints: Lightweight, responsive, no framework on the frontend. Do not write ESP32 code.
+risks: The .pkg model format might require specific ML libraries (e.g., scikit-learn, tensorflow), so we'll mock it gracefully.
+next_steps: Create MEMORY.md, main.py, requirements.txt, run.sh, documentation, and frontend files.
+
+[CHANGE LOG]
+timestamp: 2026-05-01T11:02:00Z
+change_type: code
+scope: project files
+description: Implemented the backend (main.py, requirements.txt) and frontend (index.html, style.css, script.js), and execution script (run.sh).
+reason: Fulfilling the tasks set out in PROMPT.md to build a functioning IoT server.
+impact: System is ready to be run locally or on a Raspberry Pi.
+
+[CONTEXT LOG]
+timestamp: 2026-05-01T11:02:00Z
+current_task: Complete codebase generation for IoT Edge Server.
+summary: Finished generating all required files (main.py, index.html, style.css, script.js, run.sh, README.md) based on the user's prompt. Applied a premium glassmorphism design.
+active_goals: Ready to present to the user.
+recent_changes: Created the complete stack including WebSocket data transmission, SQLite integration, and a glassmorphism responsive frontend.
+decisions: Implemented a fallback `MockModel` so the application runs even without `model.pkg`.
+assumptions: Application will be run on Linux/Mac (as `.sh` was requested).
+constraints: No framework used in the frontend.
+risks: None currently.
+next_steps: Summarize the changes for the user.
+
+[CHANGE LOG]
+timestamp: 2026-05-01T11:23:00Z
+change_type: documentation
+scope: frontend.md
+description: Created frontend.md to document the layout, components, and glassmorphism styling parameters.
+reason: The user requested a markdown file to use as a prompt/reference for building the layout in Google Stitch.
+impact: Provides a clear, structural prompt for Stitch generation.
+
+[CONTEXT LOG]
+timestamp: 2026-05-01T11:23:00Z
+current_task: Create frontend.md for Google Stitch.
+summary: Generated frontend.md outlining the glassmorphism aesthetic and component layout for the IoT dashboard.
+active_goals: Provide the user with the Stitch prompt.
+recent_changes: Added frontend.md.
+decisions: Structured the markdown into Layout, Components, and Design System to align with typical UI generation prompt best practices.
+assumptions: The user intends to copy-paste this into Stitch.
+constraints: None.
+risks: None.
+next_steps: Wait for further user instructions.
+
+[CHANGE LOG]
+timestamp: 2026-05-01T11:34:00Z
+change_type: architecture
+scope: model and endpoints
+description: Refactored the anomaly detection and stats calculations to occur per ESP device instead of globally.
+reason: The user clarified that each ESP needs its own anomaly rate, calculated specifically for it.
+impact: Altered `MockModel.predict` signature, `/api/stats` response schema, and updated `index.html` and `script.js` to render a dynamic grid of device stats.
+
+[CONTEXT LOG]
+timestamp: 2026-05-01T11:34:00Z
+current_task: Update architecture to calculate anomaly rate per ESP device.
+summary: Modified the backend model inference and the stats API to track data and calculate anomalies grouped by `device_id`. Updated the UI and Google Stitch prompt to reflect this layout change.
+active_goals: Complete per-ESP anomaly calculation request.
+recent_changes: `main.py` updated to group by `device_id`. `script.js` updated to iterate over `data.devices`. `frontend.md` updated to document a device grid layout instead of static global metric cards.
+decisions: Converted the left "Stats Overview" column into a scrollable list of individual ESP stat cards.
+assumptions: The actual `model.pkg` takes `device_id` as an argument or we can pass it if we know the architecture. The fallback handles it for now.
+constraints: UI needs to fit varying numbers of devices, so a max-height with scrollbar was implemented.
+risks: If the real model doesn't support `device_id` filtering natively, it might require a wrapper logic inside `receive_data`.
+next_steps: Inform the user of completion.
+
+[CHANGE LOG]
+timestamp: 2026-05-01T11:36:00Z
+change_type: documentation
+scope: frontend.md
+description: Deleted frontend.md at the user's request.
+reason: User indicated they didn't want to use it.
+impact: frontend.md is removed from the project.
+
+[CONTEXT LOG]
+timestamp: 2026-05-01T11:36:00Z
+current_task: Respond to user's request to drop frontend.md.
+summary: Deleted frontend.md. Attempted to auto-generate the project directly in Google Stitch using MCP tools, but hit an 'Unauthorized' error.
+active_goals: Clarify next steps with the user regarding the frontend.
+recent_changes: Removed frontend.md.
+decisions: Inform the user about the authorization issue preventing automated Stitch generation.
+assumptions: User either wants to use the vanilla UI or wants to handle Stitch manually.
+constraints: Stitch MCP server is returning unauthorized errors.
+risks: None.
+next_steps: Wait for user's clarification.
+
+[CHANGE LOG]
+timestamp: 2026-05-01T11:38:00Z
+change_type: code
+scope: frontend
+description: Completely replaced the vanilla UI with the Google Stitch layout from stitch.md.
+reason: The user provided a generated stitch.md and requested that I integrate it into the application.
+impact: Replaced the old style.css logic with Tailwind inline configurations. Modified script.js to dynamically render Stitch's precise DOM elements with the realtime WebSocket data.
+
+[CONTEXT LOG]
+timestamp: 2026-05-01T11:38:00Z
+current_task: Integrate Google Stitch UI into the FastAPI project.
+summary: Translated the hardcoded HTML produced by Stitch into dynamic templates managed by script.js and WebSocket payloads.
+active_goals: Complete integration of the user's provided UI.
+recent_changes: templates/index.html updated. static/script.js rewritten to output Stitch HTML cards.
+decisions: Extracted the dummy cards in stitch.md and put them into a JavaScript templating function so that any number of ESP devices will generate identical cards automatically.
+assumptions: The Stitch layout is fully responsive due to Tailwind container queries.
+constraints: None.
+risks: None.
+next_steps: Present the completed integration.
