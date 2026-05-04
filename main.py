@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from typing import Optional
 
 app = FastAPI(title="IoT Edge Server")
 
@@ -29,11 +30,18 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS sensor_data
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  timestamp DATETIME,
                   device_id TEXT,
-                  sensor_type TEXT,
-                  value REAL,
-                  anomaly_score REAL)''')
+                  created_at DATETIME,
+                  t_dht REAL,
+                  t_bmp REAL,
+                  is_anomaly BOOLEAN)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS gas_data
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  device_id TEXT,
+                  created_at DATETIME,
+                  gas_raw REAL,
+                  gas_lpg REAL,
+                  gas_co REAL)''')
     conn.commit()
     conn.close()
 
@@ -47,32 +55,33 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 class SensorData(BaseModel):
+    type: str # 'temp' or 'gas'
     device_id: str
-    sensor_type: str  # e.g., 'temperature', 'humidity', 'vibration'
-    value: float
+    t_dht: Optional[float] = None
+    t_bmp: Optional[float] = None
+    gas_raw: Optional[float] = None
+    gas_lpg: Optional[float] = None
+    gas_co: Optional[float] = None
 
 class MockModel:
-    """Fallback model if the real .pkg model cannot be loaded."""
-    def predict(self, value, sensor_type, device_id):
-        # We can simulate different ESP behavior
-        if device_id == 'esp32-01' and value > 30:
-            return random.uniform(0.6, 1.0)
-        if sensor_type == 'temperature' and (value > 35 or value < -10):
-            return random.uniform(0.7, 1.0)
-        elif sensor_type == 'humidity' and (value > 90 or value < 20):
-            return random.uniform(0.7, 1.0)
-        return random.uniform(0.0, 0.2)
+    """Fallback model if the real .keras model cannot be loaded."""
+    def predict(self, features):
+        return random.choice([True, False])
 
 # Load the machine learning model
 try:
-    with open('model.pkg', 'rb') as f:
-        model = pickle.load(f)
-    print("Successfully loaded model.pkg")
+    from tensorflow.keras.models import load_model
+    import numpy as np
+    model = load_model('model_2_features.keras')
+    print("Successfully loaded model_2_features.keras")
+except ImportError:
+    print("Warning: tensorflow is not installed. Using MockModel.")
+    model = MockModel()
 except FileNotFoundError:
-    print("Warning: model.pkg not found. Using MockModel for demonstration.")
+    print("Warning: model_2_features.keras not found. Using MockModel for demonstration.")
     model = MockModel()
 except Exception as e:
-    print(f"Warning: Could not load model.pkg due to error: {e}. Using MockModel.")
+    print(f"Warning: Could not load model_2_features.keras due to error: {e}. Using MockModel.")
     model = MockModel()
 
 # Active websocket connections
@@ -104,46 +113,71 @@ async def read_root(request: Request):
 @app.post("/api/data")
 async def receive_data(data: SensorData):
     """
-    Endpoint for ESP32 devices to post sensor data.
+    Unified endpoint for ESP32 devices to post either temp or gas data.
     """
-    # 1. Perform anomaly detection
-    # Assuming the model takes value, sensor_type, and device_id.
-    try:
-        anomaly_score = model.predict(data.value, data.sensor_type, data.device_id)
-    except Exception:
-        # Fallback if model interface is different
-        anomaly_score = 0.0
-
-    timestamp = datetime.datetime.now().isoformat()
-    
-    # 2. Save to database
+    created_at = datetime.datetime.now().isoformat()
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("INSERT INTO sensor_data (timestamp, device_id, sensor_type, value, anomaly_score) VALUES (?, ?, ?, ?, ?)",
-              (timestamp, data.device_id, data.sensor_type, data.value, anomaly_score))
+
+    if data.type == "temp":
+        # 1. Perform anomaly detection
+        try:
+            features = [data.t_dht, data.t_bmp]
+            if isinstance(model, MockModel):
+                is_anomaly = model.predict(features)
+            else:
+                import numpy as np
+                padded_features = np.zeros((1, 60, 2))
+                padded_features[0, -1, :] = features
+                pred = model.predict(padded_features)
+                is_anomaly = bool(pred[0][0] > 0.5)
+        except Exception as e:
+            print(f"Prediction error: {e}")
+            is_anomaly = False
+
+        c.execute("INSERT INTO sensor_data (device_id, created_at, t_dht, t_bmp, is_anomaly) VALUES (?, ?, ?, ?, ?)",
+                  (data.device_id, created_at, data.t_dht, data.t_bmp, is_anomaly))
+        
+        message = {
+            "type": "temp",
+            "device_id": data.device_id,
+            "created_at": created_at,
+            "t_dht": data.t_dht,
+            "t_bmp": data.t_bmp,
+            "is_anomaly": is_anomaly
+        }
+    elif data.type == "gas":
+        c.execute("INSERT INTO gas_data (device_id, created_at, gas_raw, gas_lpg, gas_co) VALUES (?, ?, ?, ?, ?)",
+                  (data.device_id, created_at, data.gas_raw, data.gas_lpg, data.gas_co))
+        
+        message = {
+            "type": "gas",
+            "device_id": data.device_id,
+            "created_at": created_at,
+            "gas_raw": data.gas_raw,
+            "gas_lpg": data.gas_lpg,
+            "gas_co": data.gas_co
+        }
+    else:
+        conn.close()
+        return {"status": "error", "message": "Invalid data type"}
+
     conn.commit()
     conn.close()
     
-    # 3. Broadcast to all connected clients
-    message = {
-        "timestamp": timestamp,
-        "device_id": data.device_id,
-        "sensor_type": data.sensor_type,
-        "value": data.value,
-        "anomaly_score": anomaly_score
-    }
-    
     await manager.broadcast(message)
-    return {"status": "success", "anomaly_score": anomaly_score}
+    if data.type == "temp":
+        return {"status": "success", "is_anomaly": is_anomaly}
+    return {"status": "success"}
 
-@app.get("/api/data")
-async def get_all_data(limit: int = 50):
+@app.get("/api/temp")
+async def get_all_temp_data(limit: int = 50):
     """
     Retrieve historical data.
     """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT * FROM sensor_data ORDER BY timestamp DESC LIMIT ?", (limit,))
+    c.execute("SELECT * FROM sensor_data ORDER BY created_at DESC LIMIT ?", (limit,))
     rows = c.fetchall()
     conn.close()
     
@@ -151,40 +185,73 @@ async def get_all_data(limit: int = 50):
     for row in rows:
         results.append({
             "id": row[0],
-            "timestamp": row[1],
-            "device_id": row[2],
-            "sensor_type": row[3],
-            "value": row[4],
-            "anomaly_score": row[5]
+            "device_id": row[1],
+            "created_at": row[2],
+            "t_dht": row[3],
+            "t_bmp": row[4],
+            "is_anomaly": bool(row[5])
+        })
+    return results
+
+@app.get("/api/gas")
+async def get_all_gas_data(limit: int = 50):
+    """
+    Retrieve historical gas data.
+    """
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT * FROM gas_data ORDER BY created_at DESC LIMIT ?", (limit,))
+    rows = c.fetchall()
+    conn.close()
+    
+    results = []
+    for row in rows:
+        results.append({
+            "id": row[0],
+            "device_id": row[1],
+            "created_at": row[2],
+            "gas_raw": row[3],
+            "gas_lpg": row[4],
+            "gas_co": row[5]
         })
     return results
 
 @app.get("/api/stats")
 async def get_stats():
     """
-    Retrieve statistics per device.
+    Retrieve statistics.
     """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     
-    c.execute("SELECT device_id, COUNT(*), SUM(CASE WHEN anomaly_score > 0.5 THEN 1 ELSE 0 END) FROM sensor_data GROUP BY device_id")
-    rows = c.fetchall()
+    c.execute("SELECT device_id, COUNT(*), SUM(CASE WHEN is_anomaly THEN 1 ELSE 0 END) FROM sensor_data GROUP BY device_id")
+    device_rows = c.fetchall()
+
+    c.execute("SELECT COUNT(*), SUM(CASE WHEN is_anomaly THEN 1 ELSE 0 END) FROM sensor_data")
+    row = c.fetchone()
     conn.close()
     
-    device_stats = []
-    for row in rows:
-        device_id = row[0]
-        total = row[1]
-        anomalies = row[2] or 0
-        rate = (anomalies / total * 100) if total > 0 else 0.0
-        device_stats.append({
-            "device_id": device_id,
-            "total_records": total,
-            "total_anomalies": anomalies,
-            "anomaly_rate": round(rate, 2)
+    total = row[0] if row else 0
+    anomalies = row[1] if row and row[1] else 0
+    rate = (anomalies / total * 100) if total > 0 else 0.0
+    
+    devices = []
+    for d in device_rows:
+        d_total = d[1]
+        d_anom = d[2] if d[2] else 0
+        devices.append({
+            "device_id": d[0],
+            "total_records": d_total,
+            "total_anomalies": d_anom,
+            "anomaly_rate": round((d_anom / d_total * 100) if d_total > 0 else 0, 2)
         })
         
-    return {"devices": device_stats}
+    return {
+        "total_records": total,
+        "total_anomalies": anomalies,
+        "anomaly_rate": round(rate, 2),
+        "devices": devices
+    }
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

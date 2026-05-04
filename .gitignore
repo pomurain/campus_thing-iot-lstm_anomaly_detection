@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+iot_data.db
+.DS_Store
+sensor_logs_rows.csv
+sensor_drift.ipynb
+train_2_features.py
+test.py
+extracted_code.py

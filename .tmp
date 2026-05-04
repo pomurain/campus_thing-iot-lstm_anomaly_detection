@@ -117,3 +117,83 @@ assumptions: The Stitch layout is fully responsive due to Tailwind container que
 constraints: None.
 risks: None.
 next_steps: Present the completed integration.
+
+[CHANGE LOG]
+timestamp: 2026-05-04T12:31:00Z
+change_type: schema and model integration
+scope: backend (main.py)
+description: Updated the database columns to follow the schema from sensor_logs_rows.csv and loaded model.keras instead of model.pkg.
+reason: The Keras model was trained on these specific features, so the edge server needs to accept and store these matching fields to properly perform anomaly detection.
+impact: Altered database initialization, Pydantic data model, API payload structures, and Keras model prediction.
+
+[CONTEXT LOG]
+timestamp: 2026-05-04T12:31:00Z
+current_task: Match database columns to sensor_logs_rows.csv and update model loading.
+summary: Replaced device_id, sensor_type, and value with the specific sensor features. Implemented tensorflow model loading.
+active_goals: Append logs to .tmp and update README.md with API and Database schema info.
+recent_changes: main.py updated with new schema, deleted old iot_data.db.
+decisions: Use exact column names from the CSV file to ensure model compatibility. Load model.keras using tensorflow.keras.models.load_model.
+assumptions: The model accepts the 7 continuous sensor features directly.
+constraints: Need to use keras for the new model.
+risks: If the frontend relied on device_id, it will need updates.
+next_steps: Inform user task is complete.
+
+[CHANGE LOG]
+timestamp: 2026-05-04T12:54:00Z
+change_type: architecture and UI refactoring
+scope: backend, model, frontend
+description: Retrained model to use 2 features (1 DHT, 1 BMP), updated backend to support multi-microcontrollers using device_id, updated script.js to show realtime data for both sensors and handle anomaly reporting using a 5 minute (27 records) threshold.
+reason: The user explicitly requested to track anomalies per microcontroller with a simplified payload, and display anomalies only after 5 minutes of data collection.
+impact: Transformed data pipelines to process the simplified fields and UI components to display per-device metrics.
+
+[CONTEXT LOG]
+timestamp: 2026-05-04T12:54:00Z
+current_task: Multi-microcontroller tracking and UI anomaly thresholds.
+summary: Adapted the entire system to support multiple ESP32s transmitting `t_dht` and `t_bmp` features. Added logic in `script.js` to wait for 27 records (5 minutes) before showing anomalies.
+active_goals: Finish user review implementation.
+recent_changes: Created train_2_features.py, updated main.py, refactored script.js UI state, updated README.md.
+decisions: Instead of showing 0% when there is insufficient data, display a grayed out "NOT ENOUGH DATA" status to clearly indicate warmup phase.
+assumptions: Device sends data roughly every 11 seconds.
+constraints: None.
+risks: None.
+next_steps: Wait for further user requirements.
+
+[CHANGE LOG]
+timestamp: 2026-05-04T13:02:00Z
+change_type: architecture and UI refactoring
+scope: backend, frontend, documentation
+description: Re-added gas data to the project by creating a dedicated /api/gas endpoint and gas_data SQLite table. UI updated to show raw gas readings below temp stats.
+reason: The user clarified they wanted to re-add gas data as raw informational output on the dashboard without passing it through the anomaly detection model, separating the API calls.
+impact: Created a secondary data pipeline alongside the primary anomaly model pipeline.
+
+[CONTEXT LOG]
+timestamp: 2026-05-04T13:02:00Z
+current_task: Separate API calls into /api/temp and /api/gas.
+summary: Implemented separate Pydantic models (TempData, GasData) and endpoints. Updated script.js to route websocket messages using a 'type' discriminator and render the raw gas output on the device cards.
+active_goals: Finish user review execution.
+recent_changes: Modified main.py, script.js, test.py, README.md, and updated this log.
+decisions: Added a "Raw Gas Readings" block directly into the createDeviceCard function instead of creating a separate card.
+assumptions: Gas data is broadcasted asynchronously from temp data, so state is maintained using separate latestGasReadings maps.
+constraints: None.
+risks: None.
+next_steps: Wait for user input.
+
+[CHANGE LOG]
+timestamp: 2026-05-04T13:09:00Z
+change_type: architecture and UI refactoring
+scope: backend, frontend, documentation
+description: Refactored the temp and gas APIs into a single unified `/api/data` endpoint using a `type` discriminator. Separated the Gas and Temp UI into distinct layout sections and individual cards.
+reason: The user provided specific feedback on the implementation plan, requesting a unified API endpoint if possible, and explicitly requesting Gas data to have its own dedicated cards outside of the temp cards and global areas.
+impact: Simplified the API contract for the microcontrollers while improving the dashboard UI layout separation.
+
+[CONTEXT LOG]
+timestamp: 2026-05-04T13:09:00Z
+current_task: Consolidate to unified /api/data endpoint and separate gas cards.
+summary: Reverted /api/temp and /api/gas back into a single /api/data endpoint expecting a "type" field. Created createGasCard in script.js and added a new HTML section for it.
+active_goals: Finish user review refactoring.
+recent_changes: Modified main.py to handle "temp" and "gas" types in one endpoint. Modified script.js to render separate cards.
+decisions: Used a single unified POST endpoint that routes internally based on the type field to keep ESP32 logic simple.
+assumptions: The ESP32 will send "type": "temp" or "type": "gas" in its JSON payload.
+constraints: None.
+risks: None.
+next_steps: Inform user logging is complete.
