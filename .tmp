@@ -197,3 +197,23 @@ assumptions: The ESP32 will send "type": "temp" or "type": "gas" in its JSON pay
 constraints: None.
 risks: None.
 next_steps: Inform user logging is complete.
+
+[CHANGE LOG]
+timestamp: 2026-05-04T13:21:00Z
+change_type: code
+scope: microcontroller
+description: Created `esp32_sensor_node/esp32_sensor_node.ino` to power the ESP32 hardware using DHT11, BMP280, and MQ9. It connects to the server's Wi-Fi hotspot and resolves the `prk.local` address.
+reason: The user explicitly requested an ESP32 sketch that incorporates the sensor suite and connects to the server's network.
+impact: Allows the user to flash their ESP32 hardware and begin sending real sensor data to the unified `/api/data` edge server endpoint.
+
+[CONTEXT LOG]
+timestamp: 2026-05-04T13:21:00Z
+current_task: Create microcontroller code.
+summary: Wrote `esp32_sensor_node.ino`. Implemented Wi-Fi loop connection, mDNS resolution of `prk.local`, sensor reading logic, and JSON payload building using `ArduinoJson`.
+active_goals: Finish microcontroller request.
+recent_changes: Added `esp32_sensor_node.ino` file.
+decisions: Added placeholder approximation formulas for LPG and CO since true calibration requires specific environment testing. Added placeholders for future RFID Wi-Fi configuration updates. Sent temp and gas payloads sequentially to the unified endpoint.
+assumptions: User has installed `ArduinoJson`, `Adafruit BMP280`, and `DHT sensor library` in the Arduino IDE.
+constraints: None.
+risks: None.
+next_steps: Inform user that the ESP32 code is ready.

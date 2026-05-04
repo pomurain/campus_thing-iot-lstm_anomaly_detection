@@ -26,3 +26,29 @@ The database uses SQLite (`iot_data.db`) and contains two tables: `sensor_data` 
 - `gas_raw`: Raw gas reading.
 - `gas_lpg`: LPG gas reading.
 - `gas_co`: CO gas reading.
+
+## ESP32 Microcontroller Setup
+
+A ready-to-use Arduino sketch is provided in `esp32_sensor_node/esp32_sensor_node.ino`. 
+
+**1. Required Arduino Libraries:**
+Make sure you have the following libraries installed in your Arduino IDE via the Library Manager:
+- `ArduinoJson` by Benoit Blanchon
+- `DHT sensor library` by Adafruit
+- `Adafruit BMP280 Library` by Adafruit
+
+**2. Hardware Wiring:**
+- **DHT11**: Connect the data pin to GPIO 4.
+- **BMP280**: Connect via I2C (SDA, SCL pins) with the default I2C address `0x76` (or `0x77`).
+- **MQ9**: Connect the analog output pin to GPIO 34.
+
+**3. Configuration:**
+Open the sketch and update the Wi-Fi credentials at the top of the file to match the Raspberry Pi server's hotspot:
+```cpp
+String ssid = "SERVER_HOTSPOT_SSID";
+String password = "SERVER_HOTSPOT_PASSWORD";
+```
+*(Note: A future update will allow configuring these via RFID.)*
+
+**4. Flashing:**
+Compile and upload the sketch to your ESP32. Once connected, it will use mDNS to automatically find the server at `http://prk.local:8000` and begin streaming temperature and gas data every 11 seconds!
