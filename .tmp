@@ -217,3 +217,23 @@ assumptions: User has installed `ArduinoJson`, `Adafruit BMP280`, and `DHT senso
 constraints: None.
 risks: None.
 next_steps: Inform user that the ESP32 code is ready.
+
+[CHANGE LOG]
+timestamp: 2026-05-04T13:31:00Z
+change_type: code
+scope: microcontroller
+description: Split the monolithic `esp32_sensor_node.ino` into two distinct sketches: `esp32_temp_node.ino` (for DHT and BMP) and `esp32_gas_node.ino` (for MQ9).
+reason: The user explicitly requested to have 2 separate codes for the ESP32 to prevent mixing temperature and gas data on a single microcontroller.
+impact: Allows deployment of dedicated sensor nodes for different locations or purposes. Updated documentation to reflect the new structure.
+
+[CONTEXT LOG]
+timestamp: 2026-05-04T13:31:00Z
+current_task: Split microcontroller code into Temp and Gas nodes.
+summary: Removed the old esp32_sensor_node directory. Created esp32_temp_node and esp32_gas_node with their respective isolated code. Updated README.md instructions.
+active_goals: Finish user microcontroller request.
+recent_changes: Replaced the single .ino file with two separate .ino files. Modified README.md to list instructions for both nodes.
+decisions: Maintained the same Wi-Fi and mDNS logic for both scripts but split the sensor polling and JSON payload construction.
+assumptions: User has multiple ESP32s or intends to flash them separately.
+constraints: None.
+risks: None.
+next_steps: Inform user task is complete.
