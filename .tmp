@@ -237,3 +237,163 @@ assumptions: User has multiple ESP32s or intends to flash them separately.
 constraints: None.
 risks: None.
 next_steps: Inform user task is complete.
+
+[CHANGE LOG]
+timestamp: 2026-05-11T07:30:00Z
+change_type: architecture
+scope: backend, model
+description: Updated `train_2_features.py` to continuously fetch data from `iot_data.db`, train an LSTM, and update anomaly scores on a 2-day schedule like `trainmodelusingexamplethis.py`.
+reason: The user wanted the ML pipeline to run continuously and directly update the database with anomalies using a dynamic threshold instead of manually training and copying models.
+impact: Automates anomaly detection and retraining in the background.
+
+[CONTEXT LOG]
+timestamp: 2026-05-11T07:30:00Z
+current_task: Make `train_2_features.py` run continuously like the example.
+summary: Refactored `train_2_features.py` to use `schedule`, fetch directly from SQLite, run sliding window LSTM, and push `is_anomaly` back to the DB.
+active_goals: Finish user continuous training request.
+recent_changes: Rewrote `train_2_features.py`.
+decisions: Adopted the `trainmodelusingexamplethis.py` scheduling structure while retaining the LSTM architecture.
+assumptions: The model needs to evaluate past historical data in the DB.
+constraints: None.
+risks: None.
+next_steps: Inform user.
+
+[CHANGE LOG]
+timestamp: 2026-05-11T07:35:00Z
+change_type: schema
+scope: database, backend
+description: Updated `main.py` and `train_2_features.py` schema to accept `t_dht1`, `t_dht2`, and `t_bmp`.
+reason: User explicitly requested to change the database to accept 2 DHT and 1 BMP sensor.
+impact: Required deleting the old `iot_data.db` to recreate it with the new schema upon next run. Modified API payload and model input shape.
+
+[CONTEXT LOG]
+timestamp: 2026-05-11T07:35:00Z
+current_task: Update sensor data schema for 3 features.
+summary: Modified `main.py` Pydantic models, SQL schema, and endpoint logic to expect `t_dht1`, `t_dht2`, `t_bmp`. Updated `train_2_features.py` to use a 3-unit Dense layer. Deleted `iot_data.db`.
+active_goals: Finish user schema request.
+recent_changes: Modified `main.py`, `train_2_features.py`, removed `iot_data.db`.
+decisions: Deleted the DB file directly since SQLite CREATE TABLE IF NOT EXISTS doesn't alter existing tables.
+assumptions: User hasn't recorded irreplaceable data in the dev DB.
+constraints: None.
+risks: None.
+next_steps: Wait for user input.
+
+[CHANGE LOG]
+timestamp: 2026-05-11T17:50:00Z
+change_type: testing
+scope: backend, model
+description: Created `seed.py` and seeded 100 historical data points to the backend. Tested `train_2_features.py` which successfully trained on the seeded data and detected anomalies.
+reason: The user wanted to test the server side using mock data from `sensor_logs_rows.csv` and ensure the ML training scheduled job functions properly.
+impact: Validated the end-to-end functionality of the edge server, including data ingestion, LSTM reconstruction, and anomaly storage.
+
+[CONTEXT LOG]
+timestamp: 2026-05-11T17:50:00Z
+current_task: Test end to end pipeline.
+summary: Ran `uvicorn` and `train_2_features.py` in the background. Used a vanilla python script to POST 100 rows to `/api/data`. Verified that `model_2_features.keras` was saved and `/api/stats` returned the correct data.
+active_goals: Finish user test request.
+recent_changes: Created `seed.py`. Executed background processes.
+decisions: Used vanilla python instead of pandas for `seed.py` to avoid dependency bloat.
+assumptions: Mock testing is successfully completed.
+constraints: None.
+risks: None.
+next_steps: Proceed to test batching as requested.
+
+[CHANGE LOG]
+timestamp: 2026-05-11T17:58:00Z
+change_type: architecture
+scope: backend, API
+description: Updated `/api/data` in `main.py` to accept batches (arrays) of `SensorData`. Updated `seed.py` to mock both gas and temp sensors simultaneously, sending 5 items per batch using the `ESP32-Temp-02` and `ESP32-Gas-01` device tags.
+reason: The user wanted to test the API using batches of 5 inputs per request and ensure it dynamically handles different payloads correctly under a single connection.
+impact: Allows ESPs or Gateways to batch records locally to save HTTP overhead.
+
+[CONTEXT LOG]
+timestamp: 2026-05-11T17:58:00Z
+current_task: Test batch API requests with 2nd device.
+summary: Modified the `main.py` endpoint from expecting `SensorData` to `Union[SensorData, List[SensorData]]`. Iterated payload inserts within the same SQLite transaction. Fired 40 batches of 5 payloads from `seed.py` yielding 200 inserts total.
+active_goals: Finish user batch test request.
+recent_changes: Modified `main.py` API schema, `seed.py` processing logic, restarted `uvicorn`.
+decisions: Added a `List` parser inside `/api/data` that handles an array gracefully without breaking legacy single-payload compatability.
+assumptions: The ESP32 code is not required to be updated since it still works with single payloads.
+constraints: None.
+risks: None.
+next_steps: Wait for user input.
+
+[CHANGE LOG]
+timestamp: 2026-05-11T18:02:00Z
+change_type: bug_fix
+scope: frontend
+description: Fixed an issue where raw gas sensors were not displaying on the dashboard on initial load. Fixed `t_dht` to `t_dht1` binding error. 
+reason: The initial payload fetched from `/api/stats` only queried the `sensor_data` table (temperature), leaving the gas map empty until a websocket event triggered.
+impact: Gas sensor cards now render properly upon initial page load without waiting for the next ESP32 transmission.
+
+[CONTEXT LOG]
+timestamp: 2026-05-11T18:02:00Z
+current_task: Fix gas sensor dashboard visibility.
+summary: Modified `fetchStats()` in `script.js` to also query `/api/gas` and initialize `latestGasReadings` prior to rendering cards.
+active_goals: Ensure all sensor data visualizes smoothly.
+recent_changes: Edited `static/script.js`.
+decisions: Elected to have the frontend perform an extra API call to `/api/gas` rather than changing `/api/stats` to avoid breaking downstream grouping logic.
+assumptions: None.
+constraints: None.
+risks: None.
+next_steps: Wait for user input.
+
+[CHANGE LOG]
+timestamp: 2026-05-11T18:05:30Z
+change_type: testing
+scope: backend, API
+description: Performed a 3rd data ingestion test using `ESP32-Temp-03` and `ESP32-Gas-02`. Input 100 rows from `sensor_logs_rows.csv` in batches of 5.
+reason: User requested verification of data input with fresh device names to ensure the dynamic registration and dashboard rendering work as expected for multiple nodes.
+impact: Confirmed that the backend correctly identifies and stores data from new device IDs without configuration changes.
+
+[CONTEXT LOG]
+timestamp: 2026-05-11T18:05:30Z
+current_task: Test 3rd batch of data with new devices.
+summary: Updated `seed.py` to use `ESP32-Temp-03` and `ESP32-Gas-02`. Ran the seeding script and verified the results via `/api/stats`.
+active_goals: Ensure multi-device scalability.
+recent_changes: Modified `seed.py` device names.
+decisions: None.
+assumptions: None.
+constraints: None.
+risks: None.
+next_steps: Monitor dashboard for real-time updates.
+
+[CHANGE LOG]
+timestamp: 2026-05-11T18:14:00Z
+change_type: bug_fix
+scope: frontend
+description: Fully resolved the "blank" dashboard issue by pre-populating `latestReadings` and `latestGasReadings` from the database on page load. Optimized `fetchStats` to handle up to 500 historical records to ensure all active devices are captured. Added non-zero noise to `seed.py` for gas mock data.
+reason: The dashboard was not rendering historical data on load, leading to a "blank" state for users until the next live update occurred.
+impact: All temperature and gas sensors now render immediately upon page load with their most recent historical values.
+
+[CONTEXT LOG]
+timestamp: 2026-05-11T18:14:00Z
+current_task: Verify dashboard persistence on load.
+summary: Verified via browser agent that `ESP32-Gas-03` and `ESP32-Temp-04` render immediately with non-zero data.
+active_goals: Stable dashboard visualization.
+recent_changes: Finalized `script.js` pre-population logic and `seed.py` data generation.
+decisions: Increased fetch limit to 500 to ensure older devices are not pushed out of the "latest" list by high-frequency updates from newer devices.
+assumptions: None.
+constraints: None.
+risks: None.
+next_steps: None. Project testing completed.
+
+[CHANGE LOG]
+timestamp: 2026-05-11T18:15:20Z
+change_type: config
+scope: project
+description: Updated `.gitignore` to include development scripts (`seed.py`, `test.py`, etc.), internal logs (`.tmp`, `MEMORY.md`), and microcontroller firmware folders (`esp32_temp_node/`, `esp32_gas_node/`).
+reason: Cleaned up the repository to only track files strictly necessary for the FastAPI server operation, as requested by the user.
+impact: Reduced repository bloat and prevented local data/logs from being committed.
+
+[CONTEXT LOG]
+timestamp: 2026-05-11T18:15:20Z
+current_task: Finalize .gitignore.
+summary: Added non-essential files to .gitignore.
+active_goals: Stable project configuration.
+recent_changes: Modified `.gitignore`.
+decisions: Included firmware and seeding scripts in gitignore as they are not runtime dependencies for the server.
+assumptions: None.
+constraints: None.
+risks: None.
+next_steps: None.

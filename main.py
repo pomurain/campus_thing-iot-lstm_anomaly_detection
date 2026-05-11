@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Union, List
 
 app = FastAPI(title="IoT Edge Server")
 
@@ -32,7 +32,8 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   device_id TEXT,
                   created_at DATETIME,
-                  t_dht REAL,
+                  t_dht1 REAL,
+                  t_dht2 REAL,
                   t_bmp REAL,
                   is_anomaly BOOLEAN)''')
     c.execute('''CREATE TABLE IF NOT EXISTS gas_data
@@ -57,7 +58,8 @@ templates = Jinja2Templates(directory="templates")
 class SensorData(BaseModel):
     type: str # 'temp' or 'gas'
     device_id: str
-    t_dht: Optional[float] = None
+    t_dht1: Optional[float] = None
+    t_dht2: Optional[float] = None
     t_bmp: Optional[float] = None
     gas_raw: Optional[float] = None
     gas_lpg: Optional[float] = None
@@ -108,67 +110,78 @@ manager = ConnectionManager()
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html", {"request": request})
 
 @app.post("/api/data")
-async def receive_data(data: SensorData):
+async def receive_data(data: Union[SensorData, List[SensorData]]):
     """
     Unified endpoint for ESP32 devices to post either temp or gas data.
     """
+    if not isinstance(data, list):
+        data_list = [data]
+    else:
+        data_list = data
+
     created_at = datetime.datetime.now().isoformat()
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    
+    responses = []
 
-    if data.type == "temp":
-        # 1. Perform anomaly detection
-        try:
-            features = [data.t_dht, data.t_bmp]
-            if isinstance(model, MockModel):
-                is_anomaly = model.predict(features)
-            else:
-                import numpy as np
-                padded_features = np.zeros((1, 60, 2))
-                padded_features[0, -1, :] = features
-                pred = model.predict(padded_features)
-                is_anomaly = bool(pred[0][0] > 0.5)
-        except Exception as e:
-            print(f"Prediction error: {e}")
-            is_anomaly = False
+    for item in data_list:
+        if item.type == "temp":
+            # 1. Perform anomaly detection
+            try:
+                features = [item.t_dht1, item.t_dht2, item.t_bmp]
+                if isinstance(model, MockModel):
+                    is_anomaly = model.predict(features)
+                else:
+                    import numpy as np
+                    padded_features = np.zeros((1, 60, 3))
+                    padded_features[0, -1, :] = features
+                    pred = model.predict(padded_features)
+                    is_anomaly = bool(pred[0][0] > 0.5)
+            except Exception as e:
+                print(f"Prediction error: {e}")
+                is_anomaly = False
 
-        c.execute("INSERT INTO sensor_data (device_id, created_at, t_dht, t_bmp, is_anomaly) VALUES (?, ?, ?, ?, ?)",
-                  (data.device_id, created_at, data.t_dht, data.t_bmp, is_anomaly))
-        
-        message = {
-            "type": "temp",
-            "device_id": data.device_id,
-            "created_at": created_at,
-            "t_dht": data.t_dht,
-            "t_bmp": data.t_bmp,
-            "is_anomaly": is_anomaly
-        }
-    elif data.type == "gas":
-        c.execute("INSERT INTO gas_data (device_id, created_at, gas_raw, gas_lpg, gas_co) VALUES (?, ?, ?, ?, ?)",
-                  (data.device_id, created_at, data.gas_raw, data.gas_lpg, data.gas_co))
-        
-        message = {
-            "type": "gas",
-            "device_id": data.device_id,
-            "created_at": created_at,
-            "gas_raw": data.gas_raw,
-            "gas_lpg": data.gas_lpg,
-            "gas_co": data.gas_co
-        }
-    else:
-        conn.close()
-        return {"status": "error", "message": "Invalid data type"}
+            c.execute("INSERT INTO sensor_data (device_id, created_at, t_dht1, t_dht2, t_bmp, is_anomaly) VALUES (?, ?, ?, ?, ?, ?)",
+                      (item.device_id, created_at, item.t_dht1, item.t_dht2, item.t_bmp, is_anomaly))
+            
+            message = {
+                "type": "temp",
+                "device_id": item.device_id,
+                "created_at": created_at,
+                "t_dht1": item.t_dht1,
+                "t_dht2": item.t_dht2,
+                "t_bmp": item.t_bmp,
+                "is_anomaly": is_anomaly
+            }
+            await manager.broadcast(message)
+            responses.append({"status": "success", "is_anomaly": is_anomaly})
+        elif item.type == "gas":
+            c.execute("INSERT INTO gas_data (device_id, created_at, gas_raw, gas_lpg, gas_co) VALUES (?, ?, ?, ?, ?)",
+                      (item.device_id, created_at, item.gas_raw, item.gas_lpg, item.gas_co))
+            
+            message = {
+                "type": "gas",
+                "device_id": item.device_id,
+                "created_at": created_at,
+                "gas_raw": item.gas_raw,
+                "gas_lpg": item.gas_lpg,
+                "gas_co": item.gas_co
+            }
+            await manager.broadcast(message)
+            responses.append({"status": "success"})
+        else:
+            responses.append({"status": "error", "message": "Invalid data type"})
 
     conn.commit()
     conn.close()
     
-    await manager.broadcast(message)
-    if data.type == "temp":
-        return {"status": "success", "is_anomaly": is_anomaly}
-    return {"status": "success"}
+    if len(responses) == 1:
+        return responses[0]
+    return {"status": "success", "processed": len(responses), "details": responses}
 
 @app.get("/api/temp")
 async def get_all_temp_data(limit: int = 50):
@@ -187,9 +200,10 @@ async def get_all_temp_data(limit: int = 50):
             "id": row[0],
             "device_id": row[1],
             "created_at": row[2],
-            "t_dht": row[3],
-            "t_bmp": row[4],
-            "is_anomaly": bool(row[5])
+            "t_dht1": row[3],
+            "t_dht2": row[4],
+            "t_bmp": row[5],
+            "is_anomaly": bool(row[6])
         })
     return results
 

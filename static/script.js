@@ -30,25 +30,57 @@ async function fetchStats() {
         const container = document.getElementById('device-stats-container');
         if (!data.devices || data.devices.length === 0) {
             container.innerHTML = '<div class="text-slate-500 italic p-4">No devices connected yet.</div>';
-            return;
+        } else {
+            // Fetch initial temp data to populate the readings map
+            const tempResponse = await fetch('/api/temp?limit=500');
+            const tempData = await tempResponse.json();
+            tempData.forEach(t => {
+                if (!latestReadings[t.device_id]) {
+                    latestReadings[t.device_id] = {
+                        t_dht1: t.t_dht1,
+                        t_dht2: t.t_dht2,
+                        t_bmp: t.t_bmp,
+                        is_anomaly: t.is_anomaly
+                    };
+                }
+            });
+
+            // Render temp device cards
+            container.innerHTML = '';
+            updateGlobalStats(data.devices);
+            data.devices.forEach(device => {
+                const live = latestReadings[device.device_id] || { t_dht1: 0, t_dht2: 0, t_bmp: 0, is_anomaly: false };
+                container.appendChild(createTempCard(device, live));
+            });
         }
         
-        // Render temp device cards
-        container.innerHTML = '';
-        updateGlobalStats(data.devices);
-        data.devices.forEach(device => {
-            const live = latestReadings[device.device_id] || { t_dht: 0, t_bmp: 0, is_anomaly: false };
-            container.appendChild(createTempCard(device, live));
-        });
+        // Fetch initial gas data to populate the gas map
+        const gasResponse = await fetch('/api/gas?limit=500');
+        const gasData = await gasResponse.json();
         
+        // gasData is ordered by created_at DESC, so the first occurrence of a device is the latest
+        gasData.forEach(g => {
+            if (!latestGasReadings[g.device_id]) {
+                latestGasReadings[g.device_id] = {
+                    gas_raw: g.gas_raw,
+                    gas_lpg: g.gas_lpg,
+                    gas_co: g.gas_co
+                };
+            }
+        });
+
         // Render gas device cards
         const gasContainer = document.getElementById('gas-stats-container');
         gasContainer.innerHTML = '';
-        // If the gas readings map has data, render those cards
-        Object.keys(latestGasReadings).forEach(device_id => {
-            const gas = latestGasReadings[device_id];
-            gasContainer.appendChild(createGasCard(device_id, gas));
-        });
+        const gasDevices = Object.keys(latestGasReadings);
+        if (gasDevices.length === 0) {
+            gasContainer.innerHTML = '<div class="text-slate-500 italic p-4">No gas sensors detected.</div>';
+        } else {
+            gasDevices.forEach(device_id => {
+                const gas = latestGasReadings[device_id];
+                gasContainer.appendChild(createGasCard(device_id, gas));
+            });
+        }
     } catch (error) {
         console.error("Error fetching stats:", error);
     }
@@ -101,7 +133,7 @@ function createTempCard(stats, live) {
                 <div class="relative text-center">
                     <div class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-2">DHT Temp</div>
                     <div class="text-4xl font-extrabold text-slate-900 leading-none drop-shadow-[0_10px_20px_rgba(0,0,0,0.05)]">
-                        ${live.t_dht.toFixed(1)}<span class="text-xl align-top font-medium text-slate-400">°C</span>
+                        ${live.t_dht1.toFixed(1)}<span class="text-xl align-top font-medium text-slate-400">°C</span>
                     </div>
                 </div>
                 <div class="relative text-center">
@@ -189,7 +221,8 @@ function setupWebSocket() {
         const data = JSON.parse(event.data);
         if (data.type === 'temp') {
             latestReadings[data.device_id] = {
-                t_dht: data.t_dht,
+                t_dht1: data.t_dht1,
+                t_dht2: data.t_dht2,
                 t_bmp: data.t_bmp,
                 is_anomaly: data.is_anomaly
             };
